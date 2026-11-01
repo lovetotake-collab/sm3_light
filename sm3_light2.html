@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SM3 Light 퀀트 시스템 | Dark Edition</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/static/js/quant_utils.js"></script>
+    <script>
+        // [MIT 안전장치] 로컬 파일(file://) 더블클릭 시 quant_utils.js 부재 방어 Fallback 엔진
+        if (typeof QUtils === 'undefined') {
+            window.QUtils = {
+                formatPrice: (n) => n ? Math.round(n).toLocaleString('ko-KR') : '-',
+                parseNum: (v) => v ? parseFloat(String(v).replace(/,/g, '')) : 0,
+                getTickSize: (price) => {
+                    if (price < 2000) return 1;
+                    if (price < 5000) return 5;
+                    if (price < 20000) return 10;
+                    if (price < 50000) return 50;
+                    if (price < 200000) return 100;
+                    if (price < 500000) return 500;
+                    return 1000;
+                },
+                adjustPrice: (price, isBuy = true) => {
+                    if (price <= 0) return 0;
+                    const tick = window.QUtils.getTickSize(price);
+                    return isBuy ? Math.ceil(price / tick) * tick : Math.floor(price / tick) * tick;
+                },
+                renderSM3Detail: function(stock, containerId = 'detailView') {
+                    const container = document.getElementById(containerId);
+                    if (!container) return;
+                    if (!stock) { container.style.display = 'none'; return; }
+
+                    container.style.cssText = "display: block; margin-top: 20px; background-color: #1e293b; color: white; border: 1px solid #334155; padding: 24px; border-radius: 16px; box-shadow: 0 10px 30px -5px rgba(0,0,0,0.5);";
+
+                    const vHigh = stock.high || 0;
+                    const vBaseLow = stock.low || 0;
+                    const vUnit = (vHigh > 0 && vBaseLow > 0) ? (vHigh - vBaseLow) / 4 : 0;
+                    const hasAccepted = (stock.accept || stock.accepted || 0) > 0;
+                    const vAnchor = hasAccepted ? (stock.accept || stock.accepted) : vBaseLow;
+                    const vBounce = stock.bounce || 0;
+
+                    const riseRate = vHigh && vBaseLow ? ((vHigh - vBaseLow)/vBaseLow)*100 : 0;
+                    const bounceRate = vBounce && vAnchor ? ((vAnchor - vBounce)/vBounce)*100 : 0;
+
+                    let bPoints = [
+                        this.adjustPrice(vAnchor - vUnit * 3, true),
+                        this.adjustPrice(vAnchor - vUnit * 4, true),
+                        this.adjustPrice(vAnchor - vUnit * 7, true),
+                        this.adjustPrice(vAnchor - vUnit * 8, true)
+                    ];
+                    let stopLoss = this.adjustPrice(bPoints[3] - (vUnit * 0.5), false);
+
+                    const makeLineHtml = (arr, labels, hlIdx) => {
+                        return '<div style="padding:12px; display:flex; flex-direction:column; gap:4px;">' + arr.map((val, idx) => {
+                            const isHl = Array.isArray(hlIdx) ? hlIdx.includes(idx) : hlIdx === idx;
+                            const style = isHl ? 'background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); font-weight:bold; color:white;' : 'background:rgba(255,255,255,0.02); color:#cbd5e1;';
+                            return `<div style="display:flex; justify-content:space-between; padding:6px 10px; border-radius:6px; font-size:0.85rem; ${style}"><span>${labels[idx]}</span><span>${this.formatPrice(val)}</span></div>`;
+                        }).join('') + '</div>';
+                    };
+
+                    const sm1Labels = [`1단위(<span style="color:#60a5fa;">기준고가</span>)`, '2단위', '3단위', '4단위', `5단위(<span style="color:#60a5fa;">기준저가</span>)`];
+                    const sm2Labels = [hasAccepted ? `1단위(<span style="color:#10b981;">인정저가</span>)` : `1단위(<span style="color:#60a5fa;">기준저가</span>)`, '2단위', '3단위', '4단위 ←1차', '5단위 ←2차'];
+                    const sm3Labels = ['1단위', '2단위', '3단위', '4단위 ←3차', '5단위 ←4차'];
+                    const sm4Labels = ['1단위', `2단위(<span style="color:#f87171;">손절</span>)`, '3단위', '4단위', '5단위'];
+
+                    let sellListHtml = '<div style="text-align:center; font-size:0.75rem; color:#64748b; padding:40px 0;">반등저가를 입력하면 매도라인이 표시됩니다</div>';
+                    if (vBounce > 0 && vBaseLow > 0) {
+                        const sUnit = (vBaseLow - vBounce) / 4;
+                        const sLines = [
+                            vBaseLow, 
+                            vBounce + sUnit * 3, 
+                            vBounce + sUnit * 2, 
+                            vBounce + sUnit * 1, 
+                            vBounce
+                        ];
+                        sellListHtml = `<div style="display:flex; flex-direction:column; gap:4px;">
+                                <div style="display:flex; justify-content:space-between; padding:6px 10px; border-radius:6px; font-size:0.85rem; background:rgba(255,255,255,0.05); color:white; border:1px solid rgba(96,165,250,0.3);"><span>1단위(기준저가)</span><span style="font-weight:bold;">${this.formatPrice(sLines[0])}</span></div>
+                                <div style="display:flex; justify-content:space-between; padding:6px 10px; border-radius:6px; font-size:0.85rem; background:rgba(255,255,255,0.02); color:#cbd5e1;"><span>2단위 ← 2차매도(75%)</span><span style="font-weight:bold; color:#60a5fa;">${this.formatPrice(this.adjustPrice(sLines[1], false))}</span></div>
+                                <div style="display:flex; justify-content:space-between; padding:6px 10px; border-radius:6px; font-size:0.85rem; background:rgba(255,255,255,0.02); color:#cbd5e1;"><span>3단위 ← 1차매도(50%)</span><span style="font-weight:bold; color:#60a5fa;">${this.formatPrice(this.adjustPrice(sLines[2], false))}</span></div>
+                                <div style="display:flex; justify-content:space-between; padding:6px 10px; border-radius:6px; font-size:0.85rem; background:rgba(255,255,255,0.02); color:#cbd5e1;"><span>4단위</span><span style="font-weight:bold;">${this.formatPrice(this.adjustPrice(sLines[3], false))}</span></div>
+                                <div style="display:flex; justify-content:space-between; padding:6px 10px; border-radius:6px; font-size:0.85rem; background:rgba(255,255,255,0.05); color:white; border:1px solid rgba(251,191,36,0.3);"><span>5단위(반등저가)</span><span style="font-weight:bold;">${this.formatPrice(sLines[4])}</span></div>
+                            </div>`;
+                    }
+
+                    container.innerHTML = `
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px;">
+                            <h2 style="font-size:1.25rem; font-weight:bold; color:#e2e8f0; display:flex; align-items:center; gap:8px;">📌 <span style="color:#818cf8;">상세정보</span> (SM3 Logic)</h2>
+                            <button onclick="document.getElementById('${containerId}').style.display='none';" style="background:none; border:none; color:#64748b; font-size:1.5rem; cursor:pointer;">×</button>
+                        </div>
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-bottom:24px;">
+                            <div style="background:rgba(30,41,59,0.5); border-radius:12px; padding:16px; border:1px solid rgba(99,102,241,0.3);">
+                                <div style="background:rgba(253,224,71,0.05); padding:12px 15px; border-bottom:1px solid rgba(253,224,71,0.2); border-radius:8px; display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:15px;">
+                                    <div style="display:flex; align-items:center; gap:8px;"><div style="font-size:1.125rem; font-weight:bold; color:white;">${stock.name}</div></div>
+                                    <div style="display:flex; gap:12px; font-size:0.75rem; font-weight:500;"><span style="color:#94a3b8;">상승률 <span style="font-weight:bold; color:#c084fc;">${riseRate.toFixed(2)}%</span></span><span style="color:#475569;">|</span><span style="color:#94a3b8;">반등폭 <span style="font-weight:bold; color:#60a5fa;">${bounceRate.toFixed(2)}%</span></span></div>
+                                </div>
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px;">
+                                    <div style="background:rgba(239,68,68,0.1); padding:8px; border-radius:6px; border:1px solid rgba(239,68,68,0.2); text-align:center;">1차: ${this.formatPrice(bPoints[0])}</div>
+                                    <div style="background:rgba(239,68,68,0.1); padding:8px; border-radius:6px; border:1px solid rgba(239,68,68,0.2); text-align:center;">2차: ${this.formatPrice(bPoints[1])}</div>
+                                    <div style="background:rgba(239,68,68,0.1); padding:8px; border-radius:6px; border:1px solid rgba(239,68,68,0.2); text-align:center;">3차: ${this.formatPrice(bPoints[2])}</div>
+                                    <div style="background:rgba(239,68,68,0.1); padding:8px; border-radius:6px; border:1px solid rgba(239,68,68,0.2); text-align:center;">4차: ${this.formatPrice(bPoints[3])}</div>
+                                </div>
+                                <div style="background:rgba(30,41,59,0.5); padding:10px; border-radius:8px; text-align:center;"><span style="font-size:0.8rem; color:#94a3b8;">손절: </span><span style="font-weight:bold; color:#f87171; font-size:1.1rem;">${this.formatPrice(stopLoss)}</span></div>
+                            </div>
+                            <div style="background:rgba(30,41,59,0.5); border-radius:12px; padding:16px; border:1px solid rgba(59,130,246,0.3);"><div style="color:#93c5fd; font-weight:bold; margin-bottom:16px;">매도라인</div>${sellListHtml}</div>
+                        </div>
+                        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:16px;">
+                            <div style="background:rgba(30,41,59,0.5); border-radius:12px; border:1px solid rgba(16,185,129,0.3); overflow:hidden;">
+                                <div style="background:rgba(16,185,129,0.15); padding:10px 15px; font-size:0.9rem; font-weight:800; color:#34d399;">SM1 라인 - 1유닛 ${this.formatPrice(vUnit)}원</div>
+                                ${makeLineHtml([vHigh, vHigh-vUnit, vHigh-vUnit*2, vHigh-vUnit*3, vBaseLow], sm1Labels, [])}
+                            </div>
+                            <div style="background:rgba(30,41,59,0.5); border-radius:12px; border:1px solid rgba(245,158,11,0.3); overflow:hidden;"><div style="background:rgba(245,158,11,0.15); padding:10px 15px; font-size:0.9rem; font-weight:800; color:#fbbf24;">SM2 라인</div>${makeLineHtml([vAnchor, vAnchor-vUnit, vAnchor-vUnit*2, bPoints[0], bPoints[1]], sm2Labels, [3, 4])}</div>
+                            <div style="background:rgba(30,41,59,0.5); border-radius:12px; border:1px solid rgba(249,115,22,0.3); overflow:hidden;"><div style="background:rgba(249,115,22,0.15); padding:10px 15px; font-size:0.9rem; font-weight:800; color:#fb923c;">SM3 라인</div>${makeLineHtml([bPoints[1], bPoints[1]-vUnit, bPoints[1]-vUnit*2, bPoints[2], bPoints[3]], sm3Labels, [3, 4])}</div>
+                            <div style="background:rgba(30,41,59,0.5); border-radius:12px; border:1px solid rgba(239,68,68,0.3); overflow:hidden;"><div style="background:rgba(239,68,68,0.15); padding:10px 15px; font-size:0.9rem; font-weight:800; color:#f87171;">SM4 라인</div>${makeLineHtml([bPoints[3], stopLoss, bPoints[3]-vUnit*2, bPoints[3]-vUnit*3, bPoints[3]-vUnit*4], sm4Labels, [1])}</div>
+                        </div>`;
+                }
+            };
+        }
+    </script>
+    <style>
+        /* [기존 유지] 다크모드 및 기본 스타일 */
+        body { background-color: #0f172a; color: #f1f5f9; padding: 20px; font-family: 'Pretendard', sans-serif; -webkit-font-smoothing: antialiased; }
+        .main-container { max-width: 1300px; margin: 0 auto; background: #1e293b; padding: 30px; border-radius: 28px; box-shadow: 0 20px 50px -12px rgba(0,0,0,0.5); border: 1px solid #334155; }
+        
+        /* [기존 유지] 확대된 텍스트 크기 (+3pt) */
+        h1 { text-align: center; font-size: 1.9rem; font-weight: 900; margin-bottom: 25px; color: #f8fafc; letter-spacing: -0.5px; }
+
+        .input-card { background: #0f172a; padding: 15px; border-radius: 20px; border: 1px solid #334155; margin-bottom: 20px; }
+        .flex-row-input { display: flex; align-items: flex-end; gap: 8px; width: 100%; }
+        .input-group { flex: 1; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+        
+        label { font-size: 0.85rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
+        input { padding: 10px 12px; border: 1px solid #334155; border-radius: 12px; font-weight: 700; font-size: 1.05rem; text-align: right; width: 100%; transition: all 0.2s; background: #020617; color: white; }
+        input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); }
+        
+        #stockName { text-align: left; color: #ffffff !important; } 
+        #highPrice { color: #f87171 !important; } 
+        #lowPrice { color: #60a5fa !important; }  
+        #acceptPrice { color: #4ade80 !important; } 
+        #bouncePrice { color: #c084fc !important; } 
+
+        .btn { padding: 10px 20px; border-radius: 12px; font-weight: 800; font-size: 1rem; cursor: pointer; border: none; color: white; white-space: nowrap; transition: 0.2s; }
+        .btn-add { background: #2563eb; box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3); }
+        .btn-update { background: #059669; display: none; }
+        .btn-reset { background: #334155; color: #94a3b8; border: 1px solid #475569; }
+
+        .batch-actions { display: flex; align-items: center; gap: 15px; margin-bottom: 15px; padding: 0 5px; }
+        .action-btn { font-weight: 800; font-size: 0.95rem; cursor: pointer; transition: 0.2s; }
+        
+        table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 1rem; }
+        th { background: #0f172a; padding: 15px 5px; border-bottom: 2px solid #334155; color: #94a3b8; font-weight: 800; font-size: 0.85rem; }
+        td { padding: 14px 5px; border-bottom: 1px solid #334155; text-align: center; vertical-align: middle; background: #1e293b; }
+        
+        .name-trigger { cursor: grab; font-weight: 900; color: #f8fafc; display: inline-block; width: 100%; font-size: 1.1rem; }
+        .name-trigger:active { cursor: grabbing; color: #3b82f6; }
+        tr.dragging { opacity: 0.4; background: #0f172a !important; border: 2px dashed #3b82f6; }
+
+        /* [요청 사항 반영] 텍스트 제거 및 수직 배치용 스타일 */
+        .buy-val { color: #f87171; font-weight: 800; font-size: 1.05rem; display: block; width: 100%; }
+        .sell-val { color: #60a5fa; font-weight: 800; font-size: 1.05rem; display: block; width: 100%; }
+        .prox-box { padding: 4px 10px; border-radius: 8px; font-size: 1.05rem; display: inline-block; font-weight: 800; min-width: 100px; }
+        .prox-reached { background: #f97316 !important; color: white !important; box-shadow: 0 0 10px rgba(249, 115, 22, 0.5); border: 1px solid #ea580c !important; }
+        .prox-green { color: #4ade80; background: rgba(74, 222, 128, 0.1); border: 1px solid #22c55e; }
+        
+        #detailView { margin-top: 30px; border-radius: 24px; overflow: hidden; display: none; border: 1px solid #334155; }
+        .s-check { width: 1.2rem; height: 1.2rem; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <h1>📊 SM3 LIGHT 퀀트 시스템 (Dark Mode)</h1>
+
+        <div class="input-card">
+            <div class="flex-row-input">
+                <div class="input-group"><label style="color: #94a3b8;">종목명</label><input type="text" id="stockName" placeholder="종목명"></div>
+                <div class="input-group"><label style="color: #f87171;">기준고가 (H)</label><input type="text" id="highPrice" class="num-inp"></div>
+                <div class="input-group"><label style="color: #60a5fa;">기준저가 (L)</label><input type="text" id="lowPrice" class="num-inp"></div>
+                <div class="input-group"><label style="color: #4ade80;">인정저가 (A)</label><input type="text" id="acceptPrice" class="num-inp"></div>
+                <div class="input-group"><label style="color: #c084fc;">반등저점 (B)</label><input type="text" id="bouncePrice" class="num-inp"></div>
+                <div class="flex gap-2">
+                    <button onclick="saveStock()" id="btnAdd" class="btn btn-add">🚀 추가</button>
+                    <button onclick="saveStock()" id="btnUpdate" class="btn btn-update">🔄 업데이트</button>
+                    <button onclick="resetForm()" class="btn btn-reset">초기화</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="batch-actions">
+            <label class="flex items-center gap-2 cursor-pointer font-bold text-slate-400 text-sm">
+                <input type="checkbox" id="selectAll" onclick="toggleAll()" class="s-check accent-blue-500"> 전체선택
+            </label>
+            <div class="h-4 w-[1px] bg-slate-600 mx-2"></div>
+            <button onclick="deleteSelected()" class="action-btn text-red-400 hover:text-red-300">선택 부분삭제</button>
+            <span class="text-slate-600 text-sm">|</span>
+            <button onclick="deleteAll()" class="action-btn text-slate-500 hover:text-red-500">전체삭제</button>
+        </div>
+
+        <div class="overflow-x-auto rounded-xl border border-slate-700">
+            <table>
+                <thead>
+                    <tr>
+                        <th width="50">선택</th>
+                        <th width="160" class="text-left pl-6">종목명 (드래그 이동)</th>
+                        <th width="140" class="text-red-400">🔴 1차/2차 매수</th>
+                        <th width="140" class="text-red-400">🔴 3차/4차 매수</th>
+                        <th width="130">🟣 4% / 6% 매도</th>
+                        <th width="130">🔵 1차 / 2차 매도</th>
+                        <th width="50">삭제</th>
+                    </tr>
+                </thead>
+                <tbody id="stockList"></tbody>
+            </table>
+        </div>
+
+        <div id="detailView"></div>
+    </div>
+
+    <script>
+        window.portfolio = JSON.parse(localStorage.getItem('SM3_LIGHT_DATA')) || [];
+        let editingId = null, draggedIdx = null;
+
+        function saveStock() {
+            const name = document.getElementById('stockName').value.trim();
+            const h = QUtils.parseNum(document.getElementById('highPrice').value);
+            const l = QUtils.parseNum(document.getElementById('lowPrice').value);
+            if (!name || h <= 0 || l <= 0) { alert('종목명, 고가, 저가는 필수 입력값입니다.'); return; }
+
+            const unit = (h - l) / 4;
+            const al = QUtils.parseNum(document.getElementById('acceptPrice').value);
+            const baseL = al > 0 ? al : l;
+            const b = QUtils.parseNum(document.getElementById('bouncePrice').value);
+
+            const data = {
+                id: editingId || Date.now(),
+                name, high: h, low: l, accept: al, bounce: b,
+                buyPoints: [3, 4, 7, 8].map(n => QUtils.adjustPrice(baseL - (unit * n), true)),
+                pctSells: b > 0 ? [QUtils.adjustPrice(b * 1.04, false), QUtils.adjustPrice(b * 1.06, false)] : [0, 0],
+                unitSells: b > 0 ? [QUtils.adjustPrice(b + ((l - b) / 4 * 2), false), QUtils.adjustPrice(b + ((l - b) / 4 * 3), false)] : [0, 0]
+            };
+
+            const existIdx = window.portfolio.findIndex(s => s.name === name || (editingId && s.id === editingId));
+            if (existIdx !== -1) window.portfolio.splice(existIdx, 1);
+            window.portfolio.unshift(data);
+
+            localStorage.setItem('SM3_LIGHT_DATA', JSON.stringify(window.portfolio));
+            renderUI(); resetForm();
+        }
+
+        // [요청 반영] 레이블 삭제 및 위아래 수직 배치 로직
+        function renderUI() {
+            const tbody = document.getElementById('stockList');
+            tbody.innerHTML = window.portfolio.map((s, idx) => `
+                <tr id="row-${s.id}" draggable="true" ondragstart="dStart(${idx})" ondragover="event.preventDefault()" ondrop="dDrop(${idx})" ondragend="dEnd(event)">
+                    <td onclick="event.stopPropagation()"><input type="checkbox" class="s-check accent-blue-500" value="${s.id}"></td>
+                    <td class="text-left pl-6" onclick="loadStock(${s.id})">
+                        <span class="name-trigger">${s.name}</span>
+                        <div class="text-[13px] text-slate-400 font-medium">H:${s.high.toLocaleString()} / L:${s.low.toLocaleString()}</div>
+                    </td>
+                    <td onclick="loadStock(${s.id})">
+                        <div class="flex flex-col gap-2">
+                            ${getBuyCell(s, 0)}
+                            ${getBuyCell(s, 1)}
+                        </div>
+                    </td>
+                    <td onclick="loadStock(${s.id})">
+                        <div class="flex flex-col gap-2">
+                            ${getBuyCell(s, 2)}
+                            ${getBuyCell(s, 3)}
+                        </div>
+                    </td>
+                    <td onclick="loadStock(${s.id})">
+                        <div class="flex flex-col gap-2">
+                            <div class="text-purple-400 font-extrabold">${s.pctSells[0] ? s.pctSells[0].toLocaleString() : '-'}</div>
+                            <div class="text-purple-500 font-extrabold">${s.pctSells[1] ? s.pctSells[1].toLocaleString() : '-'}</div>
+                        </div>
+                    </td>
+                    <td onclick="loadStock(${s.id})">
+                        <div class="flex flex-col gap-2">
+                            <div class="text-blue-400 font-extrabold">${s.unitSells[0] ? s.unitSells[0].toLocaleString() : '-'}</div>
+                            <div class="text-blue-500 font-extrabold">${s.unitSells[1] ? s.unitSells[1].toLocaleString() : '-'}</div>
+                        </div>
+                    </td>
+                    <td><button onclick="delOne(${s.id}, event)" class="text-red-500 font-bold hover:text-red-300 transition-colors text-xl">✕</button></td>
+                </tr>
+            `).join('');
+        }
+
+        function getBuyCell(s, idx) {
+            const p = s.buyPoints?.[idx];
+            if (!p || p === 0) return '<div class="text-slate-600">-</div>';
+            const isT = s.touchHistory?.[`buy_${idx}`];
+            // 타점 근접 감시 로직 활용
+            const diff = s.currentPrice > 0 ? ((s.currentPrice - p) / p) * 100 : 99;
+            let cls = isT ? 'prox-reached' : (diff <= 1.0 && diff >= 0 ? 'prox-green' : 'buy-val');
+            return `<div class="prox-box ${cls}">${p.toLocaleString()}</div>`;
+        }
+
+        function loadStock(id) {
+            const s = window.portfolio.find(x => x.id === id); if (!s) return;
+            editingId = s.id;
+            document.getElementById('stockName').value = s.name;
+            document.getElementById('highPrice').value = s.high.toLocaleString();
+            document.getElementById('lowPrice').value = s.low.toLocaleString();
+            document.getElementById('acceptPrice').value = s.accept ? s.accept.toLocaleString() : '';
+            document.getElementById('bouncePrice').value = s.bounce ? s.bounce.toLocaleString() : '';
+            document.getElementById('btnAdd').style.display = 'none';
+            document.getElementById('btnUpdate').style.display = 'inline-block';
+            QUtils.renderSM3Detail(s, 'detailView');
+            document.getElementById('detailView').style.display = 'block';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function resetForm() {
+            editingId = null; document.getElementById('stockName').value = '';
+            document.querySelectorAll('.num-inp').forEach(i => i.value = '');
+            document.getElementById('btnAdd').style.display = 'inline-block';
+            document.getElementById('btnUpdate').style.display = 'none';
+            document.getElementById('detailView').style.display = 'none';
+        }
+
+        function delOne(id, e) { e.stopPropagation(); if(confirm('삭제하시겠습니까?')) { window.portfolio = window.portfolio.filter(s => s.id !== id); saveAndRender(); } }
+        function deleteAll() { if(confirm('전체 삭제하시겠습니까?')) { window.portfolio = []; saveAndRender(); } }
+        function toggleAll() { const c = document.getElementById('selectAll').checked; document.querySelectorAll('.s-check').forEach(x => x.checked = c); }
+        function deleteSelected() {
+            const ids = Array.from(document.querySelectorAll('.s-check:checked')).map(x => parseInt(x.value));
+            if(ids.length === 0) return alert('항목을 선택하세요.');
+            if(confirm('선택한 항목을 삭제할까요?')) {
+                window.portfolio = window.portfolio.filter(s => !ids.includes(s.id));
+                saveAndRender(); document.getElementById('selectAll').checked = false;
+            }
+        }
+
+        function dStart(idx) { draggedIdx = idx; event.currentTarget.classList.add('dragging'); }
+        function dEnd(e) { e.currentTarget.classList.remove('dragging'); }
+        function dDrop(target) {
+            const item = window.portfolio.splice(draggedIdx, 1)[0];
+            window.portfolio.splice(target, 0, item);
+            saveAndRender();
+        }
+        function saveAndRender() { localStorage.setItem('SM3_LIGHT_DATA', JSON.stringify(window.portfolio)); renderUI(); }
+
+        window.onload = () => {
+            renderUI();
+            document.querySelectorAll('.num-inp').forEach(el => {
+                el.addEventListener('input', function() {
+                    let v = this.value.replace(/[^0-9]/g, '');
+                    this.value = v ? parseInt(v).toLocaleString() : '';
+                });
+            });
+        };
+    </script>
+</body>
+</html>
